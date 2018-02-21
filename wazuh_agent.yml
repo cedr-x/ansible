@@ -1,0 +1,58 @@
+---
+# wazuh_agent.yml
+#
+# This playbook setup wazuh agents and register (push) hosts to Wazuh 
+# This add the wazuh repo to CentOS hosts
+# - set up the required conf
+# - register the agent
+# - enable the service
+# enable the agent and register it on the wazuh instance
+# Of course, futher checks has to be implemented (idempotency / oslevel .. )
+# Contribs are wellcome
+#
+# Consider running `ansible-playbook  wazuh_agent.yml` to get all hosts registered and up on wazuh.
+
+# Raw conf to edit according your env.
+- hosts: vlc:plc:!elastic*
+  become: yes
+  vars:
+    wazuhserver: <YOUR_WAZUH_SERVER>
+    pskey: "<your_secret>"
+  tasks:
+    - name: install repo
+      yum_repository:
+         gpgcheck: yes
+         gpgkey: https://packages.wazuh.com/key/GPG-KEY-WAZUH
+         enabled: yes
+         name: wazuh_repo
+         baseurl: https://packages.wazuh.com/3.x/yum/
+         protect: yes
+         description: Wazuh repository
+
+    - name: install Wazuh agent
+      yum:
+        name: wazuh-agent
+        state: present
+
+    - name: configure the manager server
+      lineinfile:
+        path: /var/ossec/etc/ossec.conf
+        regexp: '^  *<address>[^<]*</address>$'
+        line: '      <address>{{wazuhserver}}</address>'
+
+    - stat: 
+        path: /var/ossec/etc/client.keys
+      register: keys
+
+    - name: register agent
+      command: /var/ossec/bin/agent-auth -m {{wazuhserver}} -P {{pskey}}
+      when: keys.stat.size == 0
+        
+
+    - name: enable service
+      systemd: name=wazuh-agent state=started enabled=yes masked=no
+#    - service:
+#        name: wazuh-agent
+#        state: started
+#        enabled: yes
+
